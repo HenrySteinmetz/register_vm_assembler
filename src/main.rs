@@ -31,6 +31,8 @@ pub enum OpCode {
     CL = 11,
     JL = 12,
     JLE = 13,
+    INC = 14,
+    DEC = 15,
 }
 
 #[derive(Debug)]
@@ -123,6 +125,7 @@ impl OpCode {
             JL => vec![Literal(LiteralType::String)],
             JMPE | JLE => vec![Literal(LiteralType::Int), Any, Any],
             CL => vec![Literal(LiteralType::String)],
+            INC | DEC => vec![RegisterIndex],
         }
     }
 }
