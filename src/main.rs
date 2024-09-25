@@ -31,8 +31,11 @@ pub enum OpCode {
     CL = 11,
     JL = 12,
     JLE = 13,
-    INC = 14,
-    DEC = 15,
+    JLNE = 14,
+    INC = 15,
+    DEC = 16,
+    IGL = 254,
+    NOP = 255,
 }
 
 #[derive(Debug)]
@@ -113,18 +116,18 @@ enum LiteralType {
 }
 
 impl OpCode {
-    pub fn expected_operands(&self) -> Vec<OperandType> {
+    fn expected_operands(&self) -> Vec<OperandType> {
         use OpCode::*;
         use OperandType::*;
         match self {
-            STOP => Vec::new(),
+            STOP | NOP => Vec::new(),
             LOAD => vec![RegisterIndex, Literal(LiteralType::Any)],
             ADD | SUB | MUL | DIV => vec![RegisterIndex, Any, Any],
             PRINT => vec![Any],
             JMP | JMPB | JMPF => vec![Literal(LiteralType::Int)],
-            JL => vec![Literal(LiteralType::String)],
-            JMPE | JLE => vec![Literal(LiteralType::Int), Any, Any],
-            CL => vec![Literal(LiteralType::String)],
+            JMPE => vec![Literal(LiteralType::Int), Any, Any],
+            CL | JL | IGL => vec![Literal(LiteralType::String)],
+            JLE | JLNE => vec![Literal(LiteralType::String), Any, Any],
             INC | DEC => vec![RegisterIndex],
         }
     }
