@@ -2,14 +2,11 @@ use std::{
     fs::File,
     io::{Read, Write},
     path::PathBuf,
+    process::exit,
     str::FromStr,
 };
 
 use clap::Parser;
-
-enum Error {
-    RegisterIndexOutOfBounds(u8),
-}
 
 type LineNumber = u32;
 type SectionNumber = u32;
@@ -39,15 +36,10 @@ pub enum OpCode {
 }
 
 #[derive(Debug)]
-struct Token {
-    position: (LineNumber, SectionNumber),
-    value: TokenValue,
-}
-
-#[derive(Debug)]
 enum TokenValue {
     Literal(Literal),
     RegisterIndex(RegisterIndex),
+    #[allow(dead_code)]
     RegisterValue(RegisterIndex),
 }
 
@@ -79,13 +71,11 @@ impl PartialEq<LiteralType> for Literal {
 #[derive(Debug)]
 struct RegisterIndex(u8);
 
-impl TryFrom<u8> for RegisterIndex {
-    type Error = Error;
-
-    fn try_from(value: u8) -> Result<Self, Self::Error> {
+impl From<u8> for RegisterIndex {
+    fn from(value: u8) -> Self {
         match value {
-            0..=31 => Ok(RegisterIndex(value)),
-            _ => Err(Error::RegisterIndexOutOfBounds(value)),
+            0..=31 => RegisterIndex(value),
+            _ => panic!("Register index is out of bounds. There are only 32 registers!"),
         }
     }
 }
@@ -102,6 +92,7 @@ enum Literal {
 enum OperandType {
     RegisterIndex,
     Literal(LiteralType),
+    #[allow(dead_code)]
     RegisterValue,
     Any,
 }
@@ -111,7 +102,9 @@ enum LiteralType {
     String,
     Int,
     Any,
+    #[allow(dead_code)]
     Float,
+    #[allow(dead_code)]
     Bool,
 }
 
@@ -145,15 +138,18 @@ fn main() {
     let cli = Cli::parse();
 
     if cli.output_location.exists() {
-        panic!("Output location already exists! This operation would overwrite the existing file in that location!");
+        eprintln!("Output location already exists! This operation would overwrite the existing file in that location!");
+        exit(1);
     }
 
     if !cli.input_file.exists() {
-        panic!("Input file not found!")
+        eprintln!("Input file not found!");
+        exit(1);
     }
 
     if !cli.input_file.is_file() {
-        panic!("Provided input location is not a file!");
+        eprintln!("Provided input location is not a file!");
+        exit(1);
     }
 
     let mut file_contents = String::new();
@@ -184,11 +180,13 @@ fn main() {
         let num_string_ends = string_ends.clone().count();
 
         if num_string_starts < num_string_ends {
-            panic!("Line: {}\t Missing opening quotation mark!", line_num);
+            eprintln!("Line: {}\t Missing opening quotation mark!", line_num);
+            exit(1);
         }
 
         if num_string_ends < num_string_starts {
-            panic!("Line: {}\t Missing closing quotation mark!", line_num);
+            eprintln!("Line: {}\t Missing closing quotation mark!", line_num);
+            exit(1);
         }
 
         if num_string_starts == 0 {
@@ -245,7 +243,7 @@ fn main() {
         )
         .expect(format!("Unknown OpCode in line {}", line_num).as_str());
 
-        let operands: Vec<Token> = parsed_tokens
+        let operands: Vec<TokenValue> = parsed_tokens
             .enumerate()
             .map(|x| parse_operand(&x.1, (line_num as u32, x.0 as u32)))
             .collect();
@@ -253,20 +251,22 @@ fn main() {
         let expected_operands = opcode.expected_operands();
 
         if operands.len() != expected_operands.len() {
-            panic!(
+            eprintln!(
                 "Line: {}\t Expected {} operands, got {}",
                 line_num,
                 expected_operands.len(),
                 operands.len()
             );
+            exit(1);
         }
 
         for (ex, op) in expected_operands.iter().zip(operands.iter()) {
-            if op.value != *ex {
-                panic!(
+            if *op != *ex {
+                eprintln!(
                     "Line: {}\t Expected operand type {:?} , got {:?}",
                     line_num, ex, op
                 );
+                exit(1);
             }
         }
 
@@ -275,7 +275,7 @@ fn main() {
         program_bytes.push(opcode as u8);
 
         for op in operands {
-            program_bytes.append(&mut op.value.serialize());
+            program_bytes.append(&mut op.serialize());
         }
 
         program_buffer.append(&mut program_bytes);
@@ -326,7 +326,7 @@ impl Literal {
     }
 }
 
-fn parse_operand(token: &str, position: (LineNumber, SectionNumber)) -> Token {
+fn parse_operand(token: &str, position: (LineNumber, SectionNumber)) -> TokenValue {
     if token.starts_with('#') {
         let mut int = token.chars();
         int.next();
@@ -345,10 +345,7 @@ fn parse_operand(token: &str, position: (LineNumber, SectionNumber)) -> Token {
             Ok(v) => v,
             Err(_e) => panic!("Line: {}, Section: {}\t Register index is out of bounds. There are only 32 registers!", position.0, position.1)
         };
-        return Token {
-            position,
-            value: TokenValue::RegisterIndex(value),
-        };
+        return TokenValue::RegisterIndex(value);
     }
 
     if token.starts_with('$') {
@@ -369,10 +366,8 @@ fn parse_operand(token: &str, position: (LineNumber, SectionNumber)) -> Token {
             Ok(v) => v,
             Err(_e) => panic!("Line: {}, Section: {}\tCouldn't parse `{}` as a register index while trying to get a register value.", position.0, position.1, int.as_str())
         };
-        return Token {
-            position,
-            value: TokenValue::RegisterValue(value),
-        };
+
+        return TokenValue::RegisterIndex(value);
     }
 
     if token.starts_with('\"') && token.ends_with('\"') {
@@ -380,9 +375,7 @@ fn parse_operand(token: &str, position: (LineNumber, SectionNumber)) -> Token {
         string.next();
         string.next_back();
 
-        let value = TokenValue::Literal(Literal::String(string.collect::<String>()));
-
-        return Token { position, value };
+        return TokenValue::Literal(Literal::String(string.collect::<String>()));
     }
 
     if token.starts_with('\"') {
@@ -401,18 +394,15 @@ fn parse_operand(token: &str, position: (LineNumber, SectionNumber)) -> Token {
             .as_str(),
         );
 
-        let value = TokenValue::Literal(Literal::Float(float));
-        return Token { position, value };
+        return TokenValue::Literal(Literal::Float(float));
     }
 
     if token == "true" {
-        let value = TokenValue::Literal(Literal::Bool(true));
-        return Token { position, value };
+        return TokenValue::Literal(Literal::Bool(true));
     }
 
     if token == "false" {
-        let value = TokenValue::Literal(Literal::Bool(false));
-        return Token { position, value };
+        return TokenValue::Literal(Literal::Bool(false));
     }
 
     let int = token.parse::<i64>().expect(
@@ -423,6 +413,5 @@ fn parse_operand(token: &str, position: (LineNumber, SectionNumber)) -> Token {
         .as_str(),
     );
 
-    let value = TokenValue::Literal(Literal::Int(int));
-    Token { position, value }
+    TokenValue::Literal(Literal::Int(int))
 }

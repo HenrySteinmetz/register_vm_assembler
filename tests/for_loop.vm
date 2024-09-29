@@ -1,5 +1,6 @@
 LOAD #0 10
 CL "loop"
+PRINT $0
 DEC #0
 JLNE "loop" $0 0
 STOP
